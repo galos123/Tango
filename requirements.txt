@@ -1,0 +1,31 @@
+# Core dependencies
+torch>=1.13.1
+torchaudio>=0.13.1
+numpy>=1.22.0
+scipy>=1.9.0
+
+# Audio processing
+librosa>=0.9.2
+soundfile>=0.11.0
+
+# Visualization
+matplotlib>=3.5.0
+
+# Dataset download
+audiocaps-download>=1.0.0
+pandas>=1.5.0
+
+# Progress bars
+tqdm>=4.64.0
+
+# AudioLDM dependencies (for VAE encoding)
+einops>=0.6.0
+pytorch-lightning>=1.9.0
+omegaconf>=2.2.0
+
+# Optional: for better audio processing
+resampy>=0.4.0
+audioread>=3.0.0
+
+# Utilities
+Pillow>=9.3.0
