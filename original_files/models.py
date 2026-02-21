@@ -18,7 +18,10 @@ from transformers import CLIPTokenizer, AutoTokenizer
 from transformers import CLIPTextModel, T5EncoderModel, AutoModel
 
 import diffusers
-from diffusers.utils import randn_tensor
+try:
+    from diffusers.utils.torch_utils import randn_tensor
+except ImportError:
+    from diffusers.utils import randn_tensor
 from diffusers import DDPMScheduler, UNet2DConditionModel
 # from diffusers import AutoencoderKL as DiffuserAutoencoderKL
 
