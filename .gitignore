@@ -8,6 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
-
+#
 #data 
 data/
+original_data/
+output_data/
+.venv/
+node_modules/
+__pycache__/
+*.ckpt
+*.pth
+*.so
