@@ -19,3 +19,4 @@ __pycache__/
 *.ckpt
 *.pth
 *.so
+vae_single_test/
