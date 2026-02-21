@@ -921,7 +921,15 @@ def load_wavcaps_metadata(json_dir):
         sys.exit(1)
 
     df["id"] = df["id"].astype(str)
+
+    # Normalize IDs: strip directory prefixes and file extensions so that
+    # e.g. "AudioSet_SL/Y---1_cCGK4.flac" becomes "Y---1_cCGK4"
+    df["id_raw"] = df["id"]
+    df["id"] = df["id"].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
+
+    sample_ids = df["id"].head(5).tolist()
     print(f"[INFO] Loaded {len(df)} metadata records from {len(json_files)} JSON file(s).")
+    print(f"[DEBUG] Sample normalized JSON IDs: {sample_ids}")
     return df
 
 
@@ -936,10 +944,12 @@ def scan_audio_folder(audio_dir):
     wav_map = {}
     for root, dirs, files in os.walk(audio_dir):
         for fname in files:
-            if fname.lower().endswith(".wav"):
+            if fname.lower().endswith((".wav", ".flac")):
                 stem = os.path.splitext(fname)[0]
                 wav_map[stem] = os.path.abspath(os.path.join(root, fname))
-    print(f"[INFO] Found {len(wav_map)} WAV files in: {audio_dir}")
+    sample_stems = list(wav_map.keys())[:5]
+    print(f"[INFO] Found {len(wav_map)} audio files in: {audio_dir}")
+    print(f"[DEBUG] Sample audio file stems: {sample_stems}")
     return wav_map
 
 
