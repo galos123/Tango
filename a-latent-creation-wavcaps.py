@@ -921,7 +921,15 @@ def load_wavcaps_metadata(json_dir):
         sys.exit(1)
 
     df["id"] = df["id"].astype(str)
+
+    # Normalize IDs: strip directory prefixes and file extensions so that
+    # e.g. "AudioSet_SL/Y---1_cCGK4.flac" becomes "Y---1_cCGK4"
+    df["id_raw"] = df["id"]
+    df["id"] = df["id"].apply(lambda x: os.path.splitext(os.path.basename(x))[0])
+
+    sample_ids = df["id"].head(5).tolist()
     print(f"[INFO] Loaded {len(df)} metadata records from {len(json_files)} JSON file(s).")
+    print(f"[DEBUG] Sample normalized JSON IDs: {sample_ids}")
     return df
 
 
