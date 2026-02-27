@@ -1177,26 +1177,32 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 # 10) CLI entry point
 # ============================================================
 if __name__ == "__main__":
+    # ---- Hardcoded paths (edit these if your layout changes) ----
+    AUDIO_DIR  = "/home/yitshag/test_uv/original_data/mnt/fast/nobackup/scratch4weeks/xm00178/WavCaps/data/waveforms/AudioSet_SL_flac/"
+    JSON_DIR   = "/home/yitshag/test_uv/original_data/json_files/AudioSet_SL"
+    OUTPUT_DIR = "/home/yitshag/test_uv/new_dataset_wavcaps"
+    # -------------------------------------------------------------
+
     parser = argparse.ArgumentParser(
         description="Create Tango-compatible latent dataset from WavCaps data."
     )
     parser.add_argument(
         "--audio_dir",
         type=str,
-        required=True,
-        help="Folder containing WAV files (searched recursively).",
+        default=AUDIO_DIR,
+        help="Folder containing WAV/FLAC files (searched recursively).",
     )
     parser.add_argument(
         "--json_dir",
         type=str,
-        required=True,
+        default=JSON_DIR,
         help="Folder containing WavCaps JSON metadata file(s).",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./new_dataset",
-        help="Output directory (default: ./new_dataset).",
+        default=OUTPUT_DIR,
+        help="Output directory.",
     )
     args = parser.parse_args()
 
