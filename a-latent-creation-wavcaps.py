@@ -135,7 +135,7 @@ def normalize_wav(waveform):
 
 
 def read_wav_file(filename, segment_length):
-    waveform, sr = torchaudio.load(filename)
+    waveform, sr = torchaudio.load(filename, backend="soundfile")
     waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=16000)
     waveform = waveform.numpy()[0, ...]
     waveform = normalize_wav(waveform)
