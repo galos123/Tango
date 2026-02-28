@@ -1085,21 +1085,7 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 
     target_length = CONFIG["preprocessing"]["mel"]["target_length"]
 
-    # --- Build VAE ---
-    vae_cfg = CONFIG["first_stage_config"]["params"]
-    vae = (
-        AutoencoderKL(
-            ddconfig=vae_cfg["ddconfig"],
-            embed_dim=vae_cfg["embed_dim"],
-            image_key=vae_cfg["image_key"],
-            subband=vae_cfg["subband"],
-            scale_factor=scale_factor,
-        )
-        .to(device)
-        .eval()
-    )
-
-    # Load VAE weights from checkpoint
+    # --- Extract VAE weights then free the full checkpoint before GPU transfer ---
     prefix = "first_stage_model."
     vae_state = {}
     for k, v in state.items():
@@ -1112,11 +1098,30 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
             "Expected an AudioLDM-style checkpoint (audioldm-s-full)."
         )
 
+    del ckpt, state  # free ~2.5 GB before moving model to GPU
+
+    # --- Build VAE ---
+    vae_cfg = CONFIG["first_stage_config"]["params"]
+    vae = AutoencoderKL(
+        ddconfig=vae_cfg["ddconfig"],
+        embed_dim=vae_cfg["embed_dim"],
+        image_key=vae_cfg["image_key"],
+        subband=vae_cfg["subband"],
+        scale_factor=scale_factor,
+    )
     msg = vae.load_state_dict(vae_state, strict=False)
+    del vae_state
     print(f"[LOAD] VAE loaded. missing={len(msg.missing_keys)}, unexpected={len(msg.unexpected_keys)}")
 
-    # Free checkpoint memory
-    del ckpt, state, vae_state
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    try:
+        vae = vae.to(device).eval()
+    except torch.cuda.OutOfMemoryError:
+        print("[WARN] CUDA OOM moving VAE to GPU — falling back to CPU")
+        device = torch.device("cpu")
+        vae = vae.to(device).eval()
 
     # --- Processing loop ---
     success_count = 0
