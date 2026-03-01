@@ -36,6 +36,7 @@ import glob
 import argparse
 import torch
 import requests
+import soundfile as sf
 import torchaudio
 import matplotlib
 import numpy as np
@@ -135,7 +136,8 @@ def normalize_wav(waveform):
 
 
 def read_wav_file(filename, segment_length):
-    waveform, sr = torchaudio.load(filename)
+    data, sr = sf.read(filename, dtype="float32", always_2d=True)
+    waveform = torch.from_numpy(data.T)  # (channels, samples)
     waveform = torchaudio.functional.resample(waveform, orig_freq=sr, new_freq=16000)
     waveform = waveform.numpy()[0, ...]
     waveform = normalize_wav(waveform)
@@ -938,19 +940,29 @@ def load_wavcaps_metadata(json_dir):
 # ============================================================
 def scan_audio_folder(audio_dir):
     """
-    Recursively finds all .wav files in audio_dir.
+    Recursively finds all .wav and .flac files in audio_dir.
     Returns a dict mapping filename_stem -> absolute_path.
+    If a stem appears as both .wav and .flac, .wav takes precedence.
     """
-    wav_map = {}
-    for root, dirs, files in os.walk(audio_dir):
-        for fname in files:
-            if fname.lower().endswith((".wav", ".flac")):
-                stem = os.path.splitext(fname)[0]
-                wav_map[stem] = os.path.abspath(os.path.join(root, fname))
-    sample_stems = list(wav_map.keys())[:5]
-    print(f"[INFO] Found {len(wav_map)} audio files in: {audio_dir}")
-    print(f"[DEBUG] Sample audio file stems: {sample_stems}")
-    return wav_map
+    audio_map = {}
+    wav_count = 0
+    flac_count = 0
+    # Walk twice: first flac (lower priority), then wav (higher priority)
+    for ext, counter_attr in [(".flac", "flac"), (".wav", "wav")]:
+        for root, dirs, files in os.walk(audio_dir):
+            for fname in files:
+                if fname.lower().endswith(ext):
+                    stem = os.path.splitext(fname)[0]
+                    audio_map[stem] = os.path.abspath(os.path.join(root, fname))
+                    if ext == ".flac":
+                        flac_count += 1
+                    else:
+                        wav_count += 1
+    print(
+        f"[INFO] Found {len(audio_map)} audio files"
+        f" ({wav_count} .wav, {flac_count} .flac) in: {audio_dir}"
+    )
+    return audio_map
 
 
 # ============================================================
@@ -987,12 +999,53 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 
     # --- Filter to entries that have both metadata and audio ---
     matched_ids = set(df["id"].values) & set(wav_map.keys())
-    df_filtered = df[df["id"].isin(matched_ids)].copy()
-    print(f"[INFO] Matched {len(df_filtered)} entries (have both JSON metadata and WAV file).")
 
-    if len(df_filtered) == 0:
-        print("[ERROR] No matching files found. Check that JSON 'id' fields match WAV filenames (without .wav).")
-        return
+    if len(matched_ids) == 0:
+        # Diagnostic: show samples from both sides so the user can see the mismatch
+        sample_json = list(df["id"].values)[:8]
+        sample_audio = list(wav_map.keys())[:8]
+        print(f"[DIAG] Sample JSON 'id' values  : {sample_json}")
+        print(f"[DIAG] Sample audio file stems  : {sample_audio}")
+
+        # --- Fallback 1: use 'wav' field stem (WavCaps sometimes differs from 'id') ---
+        if "wav" in df.columns and len(matched_ids) == 0:
+            df["_id_wav"] = df["wav"].apply(
+                lambda x: os.path.splitext(os.path.basename(str(x)))[0]
+            )
+            m = set(df["_id_wav"].values) & set(wav_map.keys())
+            if m:
+                print(f"[INFO] Fallback 1: matched {len(m)} entries via 'wav' field stem.")
+                df["id"] = df["_id_wav"]
+                matched_ids = m
+
+        # --- Fallback 2: strip leading 'Y' from JSON ids (AudioSet convention mismatch) ---
+        if len(matched_ids) == 0:
+            df["_id_strip"] = df["id"].str.replace(r"^Y", "", regex=True)
+            m = set(df["_id_strip"].values) & set(wav_map.keys())
+            if m:
+                print(f"[INFO] Fallback 2: matched {len(m)} entries after stripping leading 'Y' from JSON ids.")
+                df["id"] = df["_id_strip"]
+                matched_ids = m
+
+        # --- Fallback 3: prepend 'Y' to audio stems (files lack the Y prefix) ---
+        if len(matched_ids) == 0:
+            wav_map_y = {"Y" + k: v for k, v in wav_map.items()}
+            m = set(df["id"].values) & set(wav_map_y.keys())
+            if m:
+                print(f"[INFO] Fallback 3: matched {len(m)} entries after prepending 'Y' to audio stems.")
+                wav_map = wav_map_y
+                matched_ids = m
+
+        if len(matched_ids) == 0:
+            print(
+                "[ERROR] No matching files found after all fallback strategies.\n"
+                "        Verify that JSON 'id' (or 'wav') fields match audio filenames (without extension).\n"
+                "        See [DIAG] lines above for sample values from each side."
+            )
+            return
+
+    df_filtered = df[df["id"].isin(matched_ids)].copy()
+    print(f"[INFO] Matched {len(df_filtered)} entries (have both JSON metadata and audio file).")
 
     # --- Setup device ---
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -1034,21 +1087,7 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 
     target_length = CONFIG["preprocessing"]["mel"]["target_length"]
 
-    # --- Build VAE ---
-    vae_cfg = CONFIG["first_stage_config"]["params"]
-    vae = (
-        AutoencoderKL(
-            ddconfig=vae_cfg["ddconfig"],
-            embed_dim=vae_cfg["embed_dim"],
-            image_key=vae_cfg["image_key"],
-            subband=vae_cfg["subband"],
-            scale_factor=scale_factor,
-        )
-        .to(device)
-        .eval()
-    )
-
-    # Load VAE weights from checkpoint
+    # --- Extract VAE weights then free the full checkpoint before GPU transfer ---
     prefix = "first_stage_model."
     vae_state = {}
     for k, v in state.items():
@@ -1061,11 +1100,34 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
             "Expected an AudioLDM-style checkpoint (audioldm-s-full)."
         )
 
+    del ckpt, state  # free ~2.5 GB before moving model to GPU
+
+    # --- Build VAE ---
+    vae_cfg = CONFIG["first_stage_config"]["params"]
+    vae = AutoencoderKL(
+        ddconfig=vae_cfg["ddconfig"],
+        embed_dim=vae_cfg["embed_dim"],
+        image_key=vae_cfg["image_key"],
+        subband=vae_cfg["subband"],
+        scale_factor=scale_factor,
+    )
     msg = vae.load_state_dict(vae_state, strict=False)
+    del vae_state
     print(f"[LOAD] VAE loaded. missing={len(msg.missing_keys)}, unexpected={len(msg.unexpected_keys)}")
 
-    # Free checkpoint memory
-    del ckpt, state, vae_state
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    try:
+        vae = vae.to(device).eval()
+    except Exception as e:
+        if "out of memory" in str(e).lower() or "cuda error" in str(e).lower():
+            print(f"[WARN] GPU error moving VAE to GPU ({e}) — falling back to CPU")
+            torch.cuda.empty_cache()
+            device = torch.device("cpu")
+            vae = vae.to(device).eval()
+        else:
+            raise
 
     # --- Processing loop ---
     success_count = 0
@@ -1134,26 +1196,32 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 # 10) CLI entry point
 # ============================================================
 if __name__ == "__main__":
+    # ---- Hardcoded paths (edit these if your layout changes) ----
+    AUDIO_DIR  = "/home/yitshag/test_uv/original_data/mnt/fast/nobackup/scratch4weeks/xm00178/WavCaps/data/waveforms/AudioSet_SL_flac/"
+    JSON_DIR   = "/home/yitshag/test_uv/original_data/json_files/AudioSet_SL"
+    OUTPUT_DIR = "/home/yitshag/test_uv/new_dataset_wavcaps"
+    # -------------------------------------------------------------
+
     parser = argparse.ArgumentParser(
         description="Create Tango-compatible latent dataset from WavCaps data."
     )
     parser.add_argument(
         "--audio_dir",
         type=str,
-        required=True,
-        help="Folder containing WAV files (searched recursively).",
+        default=AUDIO_DIR,
+        help="Folder containing WAV/FLAC files (searched recursively).",
     )
     parser.add_argument(
         "--json_dir",
         type=str,
-        required=True,
+        default=JSON_DIR,
         help="Folder containing WavCaps JSON metadata file(s).",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./new_dataset",
-        help="Output directory (default: ./new_dataset).",
+        default=OUTPUT_DIR,
+        help="Output directory.",
     )
     args = parser.parse_args()
 
