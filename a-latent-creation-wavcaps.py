@@ -1118,10 +1118,14 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
 
     try:
         vae = vae.to(device).eval()
-    except torch.cuda.OutOfMemoryError:
-        print("[WARN] CUDA OOM moving VAE to GPU — falling back to CPU")
-        device = torch.device("cpu")
-        vae = vae.to(device).eval()
+    except Exception as e:
+        if "out of memory" in str(e).lower() or "cuda error" in str(e).lower():
+            print(f"[WARN] GPU error moving VAE to GPU ({e}) — falling back to CPU")
+            torch.cuda.empty_cache()
+            device = torch.device("cpu")
+            vae = vae.to(device).eval()
+        else:
+            raise
 
     # --- Processing loop ---
     success_count = 0
