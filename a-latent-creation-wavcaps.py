@@ -1118,14 +1118,40 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+    def _try_load_vae(vae, target_device):
+        """Try fp16 first (halves VRAM), fall back to fp32 if needed."""
+        try:
+            loaded = vae.half().to(target_device).eval()
+            print(f"[INFO] VAE loaded in fp16 on {target_device}")
+            return loaded, target_device
+        except Exception:
+            torch.cuda.empty_cache()
+            loaded = vae.float().to(target_device).eval()
+            print(f"[INFO] VAE loaded in fp32 on {target_device}")
+            return loaded, target_device
+
     try:
-        vae = vae.to(device).eval()
+        vae, device = _try_load_vae(vae, device)
     except Exception as e:
         if "out of memory" in str(e).lower() or "cuda error" in str(e).lower():
-            print(f"[WARN] GPU error moving VAE to GPU ({e}) — falling back to CPU")
-            torch.cuda.empty_cache()
-            device = torch.device("cpu")
-            vae = vae.to(device).eval()
+            # Try the other GPU if one is available
+            other_idx = 1 if device.index == 0 else 0
+            if torch.cuda.device_count() > other_idx:
+                try:
+                    torch.cuda.empty_cache()
+                    alt_device = torch.device(f"cuda:{other_idx}")
+                    print(f"[WARN] {device} OOM — trying {alt_device}")
+                    vae, device = _try_load_vae(vae, alt_device)
+                except Exception:
+                    torch.cuda.empty_cache()
+                    device = torch.device("cpu")
+                    vae = vae.float().to(device).eval()
+                    print("[WARN] Both GPUs OOM — falling back to CPU (will be slow)")
+            else:
+                torch.cuda.empty_cache()
+                device = torch.device("cpu")
+                vae = vae.float().to(device).eval()
+                print("[WARN] GPU OOM — falling back to CPU (will be slow)")
         else:
             raise
 
@@ -1165,12 +1191,15 @@ def build_wavcaps_dataset(audio_dir, json_dir, output_dir):
             plt.imsave(mel_image_path, mel.cpu().numpy().T, cmap="viridis", origin="lower")
 
             # E. VAE encode -> latent vector
-            x = mel.unsqueeze(0).unsqueeze(0).to(device)
+            # Match input dtype to the VAE (fp16 on GPU or fp32 on CPU)
+            vae_dtype = next(vae.parameters()).dtype
+            x = mel.unsqueeze(0).unsqueeze(0).to(device, dtype=vae_dtype)
             with torch.no_grad():
                 posterior = vae.encode(x)
                 z = vae.get_first_stage_encoding(posterior)
 
-            torch.save(z.cpu(), latent_path)
+            # Always save as fp32 so training always loads fp32 tensors
+            torch.save(z.float().cpu(), latent_path)
             success_count += 1
 
         except Exception as e:
