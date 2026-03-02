@@ -20,3 +20,6 @@ __pycache__/
 *.pth
 *.so
 vae_single_test/
+original_wavs/ 
+new_dataset_wavcaps/
+tensorboard/

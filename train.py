@@ -472,9 +472,9 @@ def main(
 if __name__ == "__main__":
 
     # ── Paths ─────────────────────────────────────────────────────────────────
-    DATA_DIR   = "/path/to/wavcaps_dataset"   # must contain latent_vectors/ + captions/
+    DATA_DIR   = "/home/yitshag/test_uv/new_dataset_wavcaps"   # must contain latent_vectors/ + captions/
     OUTPUT_DIR = "./runs/tango_finetune"       # checkpoints + tensorboard go here
-    UNET_CONFIG = "./unet_config.json"         # only used when NOT loading from HF/CKPT
+    UNET_CONFIG = "/home/yitshag/test_uv/original_files/diffusion_model_config.json"         # only used when NOT loading from HF/CKPT
 
     # ── Fine-tuning / resume ──────────────────────────────────────────────────
     # Set ONE of the three options below (or all None to train from scratch).
@@ -494,12 +494,12 @@ if __name__ == "__main__":
     #                     Restores model weights, optimizer state, epoch counter, and step.
     #                     e.g. "./runs/tango_finetune/checkpoints/last.pt"
     #
-    PRETRAINED_HF   = "declare-lab/tango"   # ← HF fine-tune (change or set None)
-    PRETRAINED_CKPT = None                  # ← local .pt fine-tune
-    RESUME          = None                  # ← resume interrupted run
+    PRETRAINED_HF   = "declare-lab/tango-base"  
+    PRETRAINED_CKPT = None                     
+    RESUME          = None
 
     # ── Model ─────────────────────────────────────────────────────────────────
-    TEXT_ENCODER = "google/flan-t5-large"   # must match cross_attention_dim in unet_config
+    TEXT_ENCODER = "google/flan-t5-base"   # must match cross_attention_dim in unet_config
     SNR_GAMMA    = 5.0                      # min-SNR loss weighting; set None to disable
     UNCONDITION  = False                    # True = CFG training (randomly drops 10% of captions)
 
@@ -510,14 +510,14 @@ if __name__ == "__main__":
     # across all GPUs, so each GPU receives  BATCH_SIZE / n_gpus  samples.
     #   2× RTX 2080 Ti (11 GB each) → BATCH_SIZE = 16  (8 per GPU) works well.
     #   Single GPU                  → BATCH_SIZE = 8
-    BATCH_SIZE   = 16        # 16 total → 8 per GPU on 2× 2080 Ti
+    BATCH_SIZE   = 2       # 16 total → 8 per GPU on 2× 2080 Ti
     LR           = 3e-5      # learning rate  (use 1e-4 for training from scratch)
     WEIGHT_DECAY = 1e-2
     GRAD_CLIP    = 1.0       # max gradient norm
-    GRAD_ACCUM   = 2         # effective batch = BATCH_SIZE × GRAD_ACCUM  (= 32 here)
+    GRAD_ACCUM   = 16         # effective batch = BATCH_SIZE × GRAD_ACCUM  (= 32 here)
     WARMUP_STEPS = 200       # steps before LR reaches its peak  (use 500 for scratch)
     VAL_SPLIT    = 0.05      # fraction of dataset held out for validation
-    NUM_WORKERS  = 8         # DataLoader workers  (4 per GPU is a good rule of thumb)
+    NUM_WORKERS  = 2         # DataLoader workers  (4 per GPU is a good rule of thumb)
     SAVE_EVERY   = 30        # save a periodic checkpoint every N epochs
     SEED         = 42
 
