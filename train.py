@@ -499,7 +499,7 @@ if __name__ == "__main__":
     RESUME          = None
 
     # ── Model ─────────────────────────────────────────────────────────────────
-    TEXT_ENCODER = "google/flan-t5-base"   # must match cross_attention_dim in unet_config
+    TEXT_ENCODER = "google/flan-t5-large"  # FLAN-T5-Large outputs 1024-dim; matches declare-lab/tango-base UNet (cross_attention_dim=1024)
     SNR_GAMMA    = 5.0                      # min-SNR loss weighting; set None to disable
     UNCONDITION  = False                    # True = CFG training (randomly drops 10% of captions)
 
