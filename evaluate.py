@@ -34,6 +34,19 @@ from pathlib import Path
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent / "original_files"))
+
+# audioldm package is broken on current pip/Colab but models.py only uses it
+# inside build_pretrained_models() which we never call. Stub it out so the
+# module-level import in models.py succeeds without installing the package.
+from types import ModuleType as _ModuleType
+for _mod_name in ["audioldm", "audioldm.audio", "audioldm.audio.stft"]:
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = _ModuleType(_mod_name)
+if not hasattr(sys.modules["audioldm.audio.stft"], "TacotronSTFT"):
+    sys.modules["audioldm.audio.stft"].TacotronSTFT = object  # type: ignore
+sys.modules["audioldm"].audio = sys.modules["audioldm.audio"]           # type: ignore
+sys.modules["audioldm.audio"].stft = sys.modules["audioldm.audio.stft"] # type: ignore
+
 from models import AudioDiffusion   # noqa: E402
 
 # a-latent-creation-wavcaps.py has dashes → can't use normal import
