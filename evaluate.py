@@ -191,7 +191,7 @@ def load_diffusion_model(device: torch.device) -> AudioDiffusion:
     model = AudioDiffusion(
         text_encoder_name="google/flan-t5-large",
         scheduler_name=LOCAL_SCHED_DIR,
-        unet_model_name="declare-lab/tango-base",   # downloads from HuggingFace
+        unet_model_name="declare-lab/tango",   # downloads from HuggingFace
         snr_gamma=None,
         freeze_text_encoder=True,
         uncondition=False,

@@ -494,7 +494,7 @@ if __name__ == "__main__":
     #                     Restores model weights, optimizer state, epoch counter, and step.
     #                     e.g. "./runs/tango_finetune/checkpoints/last.pt"
     #
-    PRETRAINED_HF   = "declare-lab/tango-base"  
+    PRETRAINED_HF   = "declare-lab/tango"
     PRETRAINED_CKPT = None                     
     RESUME          = None
 
