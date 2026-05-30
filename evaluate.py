@@ -204,16 +204,52 @@ def load_diffusion_model(device: torch.device, hf_repo: str = "declare-lab/tango
     main_config_path = os.path.join(repo_path, "main_config.json")
     weights_path     = os.path.join(repo_path, "pytorch_model_main.bin")
 
-    # The snapshot root contains config.json (the UNet config) directly.
-    # UNet2DConditionModel.load_config() expects a directory with config.json in it,
-    # and repo_path is exactly that directory.
-    print(f"[INFO] UNet config: {repo_path}/config.json")
+    # The TANGO UNet architecture is read directly from the checkpoint shapes.
+    # Neither config.json nor main_config.json in the snapshot is the UNet config —
+    # they are AudioDiffusion-level configs that cause diffusers to fall back to SD2
+    # defaults (cross_attention_dim=1280, use_linear_projection=False, out_channels=4).
+    # Hardcode the correct config here so the built UNet matches the checkpoint.
+    import tempfile
+    _TANGO_UNET_CFG = {
+        "_class_name": "UNet2DConditionModel",
+        "act_fn": "silu",
+        "attention_head_dim": 8,
+        "block_out_channels": [320, 640, 1280, 1280],
+        "cross_attention_dim": 1024,
+        "down_block_types": [
+            "CrossAttnDownBlock2D",
+            "CrossAttnDownBlock2D",
+            "CrossAttnDownBlock2D",
+            "DownBlock2D",
+        ],
+        "downsample_padding": 1,
+        "flip_sin_to_cos": True,
+        "freq_shift": 0,
+        "in_channels": 8,
+        "layers_per_block": 2,
+        "mid_block_scale_factor": 1,
+        "norm_eps": 1e-5,
+        "norm_num_groups": 32,
+        "out_channels": 8,
+        "sample_size": 64,
+        "up_block_types": [
+            "UpBlock2D",
+            "CrossAttnUpBlock2D",
+            "CrossAttnUpBlock2D",
+            "CrossAttnUpBlock2D",
+        ],
+        "use_linear_projection": True,
+    }
+    _tmp_cfg_dir = tempfile.mkdtemp()
+    with open(os.path.join(_tmp_cfg_dir, "config.json"), "w") as _f:
+        json.dump(_TANGO_UNET_CFG, _f)
+    print(f"[INFO] Using hardcoded TANGO UNet config (cross_attention_dim=1024, use_linear_projection=True)")
 
     model = AudioDiffusion(
         text_encoder_name="google/flan-t5-large",
         scheduler_name=LOCAL_SCHED_DIR,
         unet_model_name=None,
-        unet_model_config_path=repo_path,
+        unet_model_config_path=_tmp_cfg_dir,
         snr_gamma=None,
         freeze_text_encoder=True,
         uncondition=False,
