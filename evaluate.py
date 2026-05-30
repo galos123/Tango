@@ -35,17 +35,57 @@ from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent / "original_files"))
 
-# audioldm package is broken on current pip/Colab but models.py only uses it
-# inside build_pretrained_models() which we never call. Stub it out so the
-# module-level import in models.py succeeds without installing the package.
+# audioldm fails to install on current Colab/pip. models.py and autoencoder.py
+# import it at module level, but none of those code paths are used during
+# inference (only in build_pretrained_models which we never call).
+# Stub every required submodule so the imports resolve without the package.
 from types import ModuleType as _ModuleType
-for _mod_name in ["audioldm", "audioldm.audio", "audioldm.audio.stft"]:
-    if _mod_name not in sys.modules:
-        sys.modules[_mod_name] = _ModuleType(_mod_name)
-if not hasattr(sys.modules["audioldm.audio.stft"], "TacotronSTFT"):
-    sys.modules["audioldm.audio.stft"].TacotronSTFT = object  # type: ignore
-sys.modules["audioldm"].audio = sys.modules["audioldm.audio"]           # type: ignore
-sys.modules["audioldm.audio"].stft = sys.modules["audioldm.audio.stft"] # type: ignore
+
+_AUDIOLDM_STUBS = [
+    "audioldm",
+    "audioldm.audio",
+    "audioldm.audio.stft",
+    "audioldm.latent_diffusion",
+    "audioldm.latent_diffusion.ema",
+    "audioldm.variational_autoencoder",
+    "audioldm.variational_autoencoder.modules",
+    "audioldm.variational_autoencoder.distributions",
+    "audioldm.hifigan",
+    "audioldm.hifigan.utilities",
+    "audioldm.clap",
+    "audioldm.clap.encoders",
+    "audioldm.pipline",
+]
+for _n in _AUDIOLDM_STUBS:
+    if _n not in sys.modules:
+        _m = _ModuleType(_n)
+        _m.__path__ = []   # marks it as a package so sub-imports work
+        sys.modules[_n] = _m
+
+# wire parent → child so attribute access works alongside sys.modules lookup
+sys.modules["audioldm"].audio                            = sys.modules["audioldm.audio"]                           # type: ignore
+sys.modules["audioldm.audio"].stft                       = sys.modules["audioldm.audio.stft"]                      # type: ignore
+sys.modules["audioldm"].latent_diffusion                 = sys.modules["audioldm.latent_diffusion"]                # type: ignore
+sys.modules["audioldm.latent_diffusion"].ema             = sys.modules["audioldm.latent_diffusion.ema"]            # type: ignore
+sys.modules["audioldm"].variational_autoencoder          = sys.modules["audioldm.variational_autoencoder"]         # type: ignore
+sys.modules["audioldm.variational_autoencoder"].modules  = sys.modules["audioldm.variational_autoencoder.modules"] # type: ignore
+sys.modules["audioldm.variational_autoencoder"].distributions = sys.modules["audioldm.variational_autoencoder.distributions"] # type: ignore
+sys.modules["audioldm"].hifigan                          = sys.modules["audioldm.hifigan"]                         # type: ignore
+sys.modules["audioldm.hifigan"].utilities                = sys.modules["audioldm.hifigan.utilities"]               # type: ignore
+
+# stub the specific names imported from those modules
+sys.modules["audioldm.audio.stft"].TacotronSTFT = object                   # type: ignore
+sys.modules["audioldm.variational_autoencoder.modules"].Encoder = object   # type: ignore
+sys.modules["audioldm.variational_autoencoder.modules"].Decoder = object   # type: ignore
+sys.modules["audioldm.variational_autoencoder.distributions"].DiagonalGaussianDistribution = object  # type: ignore
+sys.modules["audioldm.hifigan.utilities"].get_vocoder    = lambda *a, **k: None  # type: ignore
+sys.modules["audioldm.hifigan.utilities"].vocoder_infer  = lambda *a, **k: None  # type: ignore
+
+# Also stub the local autoencoder module — it has deep audioldm dependencies
+# and is only used in build_pretrained_models() which we never call
+_ae_stub = _ModuleType("autoencoder")
+_ae_stub.AutoencoderKL = object  # type: ignore
+sys.modules["autoencoder"] = _ae_stub
 
 from models import AudioDiffusion   # noqa: E402
 
