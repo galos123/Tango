@@ -186,17 +186,43 @@ def ensure_scheduler_config() -> None:
     }, indent=2))
 
 
-def load_diffusion_model(device: torch.device) -> AudioDiffusion:
+def load_diffusion_model(device: torch.device, hf_repo: str = "declare-lab/tango") -> AudioDiffusion:
+    """
+    The declare-lab/tango HF repo stores the full AudioDiffusion state dict in
+    pytorch_model_main.bin (not a diffusers unet/ subfolder).
+    We use snapshot_download to get all files, build the model from the repo's
+    main_config.json, then load the state dict directly.
+    """
+    from huggingface_hub import snapshot_download
+
     ensure_scheduler_config()
+
+    print(f"[INFO] Downloading {hf_repo} from HuggingFace ...")
+    repo_path = snapshot_download(repo_id=hf_repo)
+    print(f"[INFO] Downloaded to {repo_path}")
+
+    main_config_path = os.path.join(repo_path, "main_config.json")
+    weights_path     = os.path.join(repo_path, "pytorch_model_main.bin")
+
     model = AudioDiffusion(
         text_encoder_name="google/flan-t5-large",
         scheduler_name=LOCAL_SCHED_DIR,
-        unet_model_name="declare-lab/tango",   # downloads from HuggingFace
+        unet_model_name=None,
+        unet_model_config_path=main_config_path,
         snr_gamma=None,
         freeze_text_encoder=True,
         uncondition=False,
-    ).to(device).eval()
-    return model
+    )
+
+    print(f"[INFO] Loading pretrained weights from {weights_path} ...")
+    state_dict = torch.load(weights_path, map_location="cpu")
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    if missing:
+        print(f"[INFO] {len(missing)} missing keys (expected — text encoder loaded separately)")
+    if unexpected:
+        print(f"[WARN] {len(unexpected)} unexpected keys ignored")
+
+    return model.to(device).eval()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
