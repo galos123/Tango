@@ -187,27 +187,43 @@ def generate_audio(
 
 def compute_clap_score(wav_paths: list[str], prompts: list[str]) -> float:
     """
-    Compute mean CLAP score (text–audio cosine similarity) using LAION-CLAP.
-    Higher = better semantic alignment.
+    Compute mean CLAP score (text–audio cosine similarity) using HuggingFace
+    transformers ClapModel. No extra install needed — transformers is already
+    a dependency. Model: laion/larger_clap_music_and_speech (~600 MB, downloads
+    automatically on first run).
+
+    CLAP expects 48 kHz audio; we resample from 16 kHz before embedding.
+    Higher score = better semantic alignment between text and generated audio.
     """
-    try:
-        import laion_clap
-    except ImportError:
-        print("[WARN] laion-clap not installed. Skipping CLAP score.")
-        print("       pip install laion-clap")
-        return float("nan")
+    from transformers import ClapModel, ClapProcessor
+    import torch.nn.functional as F
 
-    model = laion_clap.CLAP_Module(enable_fusion=False)
-    model.load_ckpt()   # downloads CLAP weights on first run (~400 MB)
+    clap_name = "laion/larger_clap_music_and_speech"
+    print(f"[CLAP] Loading {clap_name} ...")
+    clap_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    clap_model  = ClapModel.from_pretrained(clap_name).to(clap_device).eval()
+    processor   = ClapProcessor.from_pretrained(clap_name)
+    target_sr   = processor.feature_extractor.sampling_rate   # 48000
 
-    audio_embeds = model.get_audio_embedding_from_filelist(wav_paths, use_tensor=False)
-    text_embeds  = model.get_text_embedding(prompts, use_tensor=False)
-
-    # Cosine similarity per pair, then mean
     sims = []
-    for a, t in zip(audio_embeds, text_embeds):
-        cos = float(np.dot(a, t) / (np.linalg.norm(a) * np.linalg.norm(t) + 1e-8))
-        sims.append(cos)
+    for wav_path, prompt in tqdm(zip(wav_paths, prompts), total=len(wav_paths),
+                                  desc="CLAP", leave=False):
+        # Load + resample to 48 kHz
+        wav, sr = torchaudio.load(wav_path)
+        if sr != target_sr:
+            wav = torchaudio.functional.resample(wav, sr, target_sr)
+        wav_np = wav[0].numpy()   # (T,)
+
+        with torch.no_grad():
+            a_in = processor(audios=wav_np, sampling_rate=target_sr,
+                             return_tensors="pt").to(clap_device)
+            t_in = processor(text=prompt, return_tensors="pt",
+                             padding=True).to(clap_device)
+            a_emb = clap_model.get_audio_features(**a_in)
+            t_emb = clap_model.get_text_features(**t_in)
+            sim   = F.cosine_similarity(a_emb, t_emb).item()
+        sims.append(sim)
+
     return float(np.mean(sims))
 
 
