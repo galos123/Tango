@@ -32,6 +32,7 @@ import torchaudio
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
+from diffusers import DDIMScheduler
 
 sys.path.insert(0, str(Path(__file__).parent / "original_files"))
 
@@ -281,10 +282,14 @@ def generate_audio(
 ) -> np.ndarray:
     """Returns a 1-D float32 numpy array at 16 kHz."""
 
+    # Use DDIM for inference — matches quality of DDPM-200 in 50 steps (4x faster).
+    # Both schedulers share the same noise/beta schedule; DDIM just skips timesteps.
+    ddim = DDIMScheduler.from_config(model.noise_scheduler.config)
+
     # 1. Run diffusion → latent (8, 256, 16)
     latents = model.inference(
         prompt=[prompt],
-        inference_scheduler=model.inference_scheduler,
+        inference_scheduler=ddim,
         num_steps=num_steps,
         guidance_scale=guidance_scale,
         num_samples_per_prompt=1,
@@ -369,7 +374,7 @@ def main():
     parser.add_argument("--csv",         required=True,  help="AudioCaps test.csv path")
     parser.add_argument("--output_dir",  default="./eval_output")
     parser.add_argument("--n_samples",   type=int, default=100)
-    parser.add_argument("--num_steps",   type=int, default=200,  help="DDPM inference steps")
+    parser.add_argument("--num_steps",   type=int, default=50,   help="DDIM inference steps (50 matches DDPM-200 quality)")
     parser.add_argument("--guidance",    type=float, default=3.0)
     parser.add_argument("--audioldm_ckpt", default="./eval_output/audioldm-s-full.ckpt",
                         help="Path to the AudioLDM checkpoint (downloaded automatically if missing)")
