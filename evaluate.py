@@ -204,19 +204,29 @@ def load_diffusion_model(device: torch.device, hf_repo: str = "declare-lab/tango
     main_config_path = os.path.join(repo_path, "main_config.json")
     weights_path     = os.path.join(repo_path, "pytorch_model_main.bin")
 
-    # main_config.json is the AudioDiffusion config; the actual UNet config
-    # is referenced inside it under 'unet_model_config_path' (relative to repo root)
+    # main_config.json is the AudioDiffusion config; the actual UNet config is
+    # referenced inside it under 'unet_model_config_path' (relative to repo root).
+    # UNet2DConditionModel.load_config() expects a *directory* containing config.json,
+    # not a direct path to a JSON file — so we write it into a temp dir.
+    import tempfile
     with open(main_config_path) as f:
         main_cfg = json.load(f)
     unet_cfg_rel  = main_cfg.get("unet_model_config_path", "configs/diffusion_model_config.json")
     unet_cfg_path = os.path.join(repo_path, unet_cfg_rel)
-    print(f"[INFO] UNet config: {unet_cfg_path}")
+    print(f"[INFO] UNet config source: {unet_cfg_path}")
+
+    with open(unet_cfg_path) as f:
+        unet_cfg_data = json.load(f)
+    tmp_cfg_dir = tempfile.mkdtemp()
+    with open(os.path.join(tmp_cfg_dir, "config.json"), "w") as f:
+        json.dump(unet_cfg_data, f)
+    print(f"[INFO] UNet config dir: {tmp_cfg_dir}")
 
     model = AudioDiffusion(
         text_encoder_name="google/flan-t5-large",
         scheduler_name=LOCAL_SCHED_DIR,
         unet_model_name=None,
-        unet_model_config_path=unet_cfg_path,
+        unet_model_config_path=tmp_cfg_dir,
         snr_gamma=None,
         freeze_text_encoder=True,
         uncondition=False,
