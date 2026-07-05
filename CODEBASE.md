@@ -219,3 +219,10 @@ dataset = TangoDataset(data_dir="./data/tango_dataset", subset="train")
 ```bash
 python vae_infer.py
 ```
+
+### 5. Align the model with DPO
+
+See [`dpo/README.md`](dpo/README.md) — builds a preference dataset (either
+by generating pairs with an LLM-augmented prompt, or from the public
+Audio-Alpaca dataset) and trains with Diffusion-DPO on top of a fine-tuned
+checkpoint, the same recipe used for TANGO 2.
